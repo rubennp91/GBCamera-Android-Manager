@@ -88,7 +88,7 @@ public class GBxCartCommands {
             // ---------- L2–L11 ----------
             if (firmwareVersion < 12) {
                 GBxCartCommands.firmwareVersion = firmwareVersion;
-                GBxCartCommands.powerControlSupport = true;  // TS: fw > 1
+                GBxCartCommands.powerControlSupport = true;
                 GBxCartCommands.bootloaderResetSupport = false;
                 GBxCartCommands.deviceName = "GBxCart RW";
             }
@@ -276,12 +276,7 @@ public class GBxCartCommands {
     }
 
     private static byte[] CartRead_ROM(int address, int length, UsbSerialPort port, Context context, TextView tv) {
-        int max_length;
-        if (firmwareVersion >= 12) {
-            max_length = 0x1000; // This is reset to 64 before dumping ROM
-        } else {
-            max_length = 0x800; // This is reset to 64 before dumping ROM
-        }
+        int max_length = 64;
         int num = (int) Math.ceil((double) length / (double) max_length);
         if (length > max_length) {
             length = max_length;
@@ -413,19 +408,11 @@ public class GBxCartCommands {
                 int chunksPerBank;
 
                 setFwVariable("DMG_READ_CS_PULSE", 1, port, context);
-                setFwVariable("DMG_ACCESS_MODE", 1, port, context); // MODE_ROM_READ
+                setFwVariable("DMG_ACCESS_MODE", 1, port, context);
 
-                if (firmwareVersion >= 12) {
-                    // L12+ — TS-style: 0x1000 chunks
-                    transferSize = 64;
-                    chunksPerBank = bytesPerBank / transferSize; // 4
-                    setFwVariable("TRANSFER_SIZE", transferSize, port, context);
-                } else {
-                    // L2–L11 — keep 64-byte chunks, but no CartRead_ROM overhead
-                    transferSize = 64;
-                    chunksPerBank = bytesPerBank / transferSize; // 256
-                    setFwVariable("TRANSFER_SIZE", transferSize, port, context);
-                }
+                transferSize = 64;
+                chunksPerBank = bytesPerBank / transferSize;
+                setFwVariable("TRANSFER_SIZE", transferSize, port, context);
 
                 int totalIterations = 64 * chunksPerBank;
                 int currentIteration = 0;
@@ -602,21 +589,15 @@ public class GBxCartCommands {
             Cart_write(0x0000, 0x0A, port, context);
 
             int transferSize;
-            int bytesPerBank = 0x2000; // 8 KiB
+            int bytesPerBank = 0x2000;
             int chunksPerBank;
 
             setFwVariable("DMG_READ_CS_PULSE", 1, port, context);
             setFwVariable("DMG_ACCESS_MODE", 3, port, context);
 
-            if (firmwareVersion >= 12) {
-                transferSize = 64; // should be transferSize = 0x1000 but it's not working
-                setFwVariable("TRANSFER_SIZE", transferSize, port, context);
-                chunksPerBank = bytesPerBank / transferSize; // 2 (for 0x1000)
-            } else {
-                transferSize = 64; // should be transferSize = 0x800 but it's not working
-                setFwVariable("TRANSFER_SIZE", transferSize, port, context);
-                chunksPerBank = bytesPerBank / transferSize; // 0x2000 / 64 = 128
-            }
+            transferSize = 64;
+            chunksPerBank = bytesPerBank / transferSize;
+            setFwVariable("TRANSFER_SIZE", transferSize, port, context);
 
             try {
                 fos = new FileOutputStream(file);
@@ -635,7 +616,6 @@ public class GBxCartCommands {
                         commandByte[0] = (byte) x;
                         port.write(commandByte, TIMEOUT);
 
-                        // Read exactly transferSize bytes (or up to it)
                         int len = port.read(readLength, TIMEOUT);
 
                         // Append to output
