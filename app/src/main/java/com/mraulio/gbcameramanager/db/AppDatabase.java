@@ -16,8 +16,7 @@ import com.mraulio.gbcameramanager.model.GbcImage;
 import com.mraulio.gbcameramanager.model.GbcPalette;
 import com.mraulio.gbcameramanager.model.ImageData;
 
-@Database(entities = {GbcImage.class, GbcPalette.class, GbcFrame.class, ImageData.class}, version = 6, autoMigrations = {
-        @AutoMigration(from = 5, to = 6)})
+@Database(entities = {GbcImage.class, GbcPalette.class, GbcFrame.class, ImageData.class}, version = 6)
 @androidx.room.TypeConverters(TypeConverters.class)
 public abstract class AppDatabase extends RoomDatabase {
     public abstract ImageDao imageDao();
