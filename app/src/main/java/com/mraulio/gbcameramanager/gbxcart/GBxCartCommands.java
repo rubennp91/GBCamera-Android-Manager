@@ -275,29 +275,23 @@ public class GBxCartCommands {
         }
     }
 
-    private static byte[] CartRead_ROM(int address, int length, UsbSerialPort port, Context context, TextView tv) {
+    private static byte[] CartRead_ROM(int length, UsbSerialPort port, Context context, TextView tv) {
         int max_length = 64;
-        int num = (int) Math.ceil((double) length / (double) max_length);
+
         if (length > max_length) {
             length = max_length;
         }
+        int num = (int) Math.ceil((double) length / (double) max_length);
         byte[] buffer = new byte[num * length];
-        setFwVariable("TRANSFER_SIZE", length, port, context);
-        setFwVariable("ADDRESS", address, port, context);
-        setFwVariable("DMG_ACCESS_MODE", 1, port, context); // MODE_ROM_READ
 
         byte[] commandByte = new byte[1];
 
         String command = "DMG_CART_READ";
-        int x = GBxCartConstants.DEVICE_CMD.get(command);
-        commandByte[0] = (byte) x;
 
         try {
-            if (firmwareVersion >= 12) {
-                for (int i = 0; i < num; i++) {
-                    port.write(commandByte, TIMEOUT);
-                }
-            } else {
+            for (int i = 0; i < num; i++) {
+                int x = GBxCartConstants.DEVICE_CMD.get(command);
+                commandByte[0] = (byte) x;
                 port.write(commandByte, TIMEOUT);
             }
         } catch (Exception e) {
@@ -311,7 +305,12 @@ public class GBxCartCommands {
         byte[] receivedData = new byte[0x10];
 
         try {
-            CartRead_ROM(0x134, 0x10, port, context, tv);
+            setFwVariable("TRANSFER_SIZE", 0x10, port, context);
+            setFwVariable("DMG_ACCESS_MODE", 1, port, context);
+            setFwVariable("DMG_READ_CS_PULSE", 1, port, context);
+            setFwVariable("ADDRESS", 0x134, port, context);
+
+            CartRead_ROM(0x10, port, context, tv);
             int len = port.read(readLength, TIMEOUT);//Intento leer manualmente
             receivedData = (Arrays.copyOf(readLength, len));
 
@@ -338,6 +337,22 @@ public class GBxCartCommands {
             }
         } catch (Exception e) {
 //            Toast.makeText(context, "Error en Cart_write\n" + e.toString(), Toast.LENGTH_LONG).show();
+        }
+    }
+
+    public static void CartRead_RAM(int address, int length, UsbSerialPort port, Context context) {
+
+        byte[] commandByte = new byte[1];
+
+        String command = "DMG_CART_READ";
+        try {
+//
+            int x = GBxCartConstants.DEVICE_CMD.get(command);
+            commandByte[0] = (byte) x;
+            port.write(commandByte, TIMEOUT);
+
+        } catch (Exception e) {
+//            Toast.makeText(context, "Error en cartReadRom\n" + e.toString(), Toast.LENGTH_LONG).show();
         }
     }
 
@@ -399,19 +414,21 @@ public class GBxCartCommands {
 //                Toast toast = Toast.makeText(context, "Error making file: " + e.toString(), Toast.LENGTH_SHORT);
 //                toast.show();
             }
+
+            setFwVariable("TRANSFER_SIZE", 64, port, context);
+            setFwVariable("DMG_ACCESS_MODE", 1, port, context);
+            setFwVariable("DMG_READ_CS_PULSE", 1, port, context);
+
             try {
                 fos = new FileOutputStream(file);
                 bos = new BufferedOutputStream(fos);
 
                 int bytesPerBank = 0x4000; // 16 KiB
-                int transferSize;
-                int chunksPerBank;
+                int transferSize = 64;
+                int chunksPerBank = bytesPerBank / transferSize;
 
                 setFwVariable("DMG_READ_CS_PULSE", 1, port, context);
-                setFwVariable("DMG_ACCESS_MODE", 1, port, context);
-
-                transferSize = 64;
-                chunksPerBank = bytesPerBank / transferSize;
+                setFwVariable("DMG_ACCESS_MODE", 1, port, context); // MODE_ROM_READ
                 setFwVariable("TRANSFER_SIZE", transferSize, port, context);
 
                 int totalIterations = 64 * chunksPerBank;
@@ -421,7 +438,7 @@ public class GBxCartCommands {
                     // Select ROM bank
                     Cart_write(0x2100, bank, port, context);
 
-                    // Set starting address for this bank
+                    // First bank starts at 0, others at 0x4000
                     if (bank == 0) {
                         setFwVariable("ADDRESS", 0x0000, port, context);
                     } else {
@@ -437,8 +454,7 @@ public class GBxCartCommands {
                         byte[] buffer = new byte[transferSize];
                         int total = 0;
 
-                        if (firmwareVersion >= 12) {
-                            // Accumulate up to transferSize (0x1000) in 64-byte USB packets
+                        if (firmwareVersion >= 12) { // L12+
                             while (total < transferSize) {
                                 byte[] temp = new byte[64];
                                 int n = port.read(temp, TIMEOUT);
@@ -446,8 +462,7 @@ public class GBxCartCommands {
                                 System.arraycopy(temp, 0, buffer, total, n);
                                 total += n;
                             }
-                        } else {
-                            // L11: one read of 64 bytes
+                        } else { // L2-L11
                             int len = port.read(buffer, TIMEOUT);
                             total = (len > 0) ? len : 0;
                         }
@@ -588,16 +603,9 @@ public class GBxCartCommands {
             Cart_write(0x6000, 0x01, port, context);
             Cart_write(0x0000, 0x0A, port, context);
 
-            int transferSize;
-            int bytesPerBank = 0x2000;
-            int chunksPerBank;
-
-            setFwVariable("DMG_READ_CS_PULSE", 1, port, context);
+            setFwVariable("TRANSFER_SIZE", 64, port, context);
             setFwVariable("DMG_ACCESS_MODE", 3, port, context);
-
-            transferSize = 64;
-            chunksPerBank = bytesPerBank / transferSize;
-            setFwVariable("TRANSFER_SIZE", transferSize, port, context);
+            setFwVariable("DMG_READ_CS_PULSE", 1, port, context);
 
             try {
                 fos = new FileOutputStream(file);
@@ -605,24 +613,22 @@ public class GBxCartCommands {
                 for (int i = 0; i < 16; i++) {
                     // Set SRAM bank
                     Cart_write(0x4000, i, port, context);
+                    // Set ADDRESS once per bank switch
                     setFwVariable("ADDRESS", 0xA000, port, context);
-
-                    for (int j = 0; j < chunksPerBank; j++) {
-                        byte[] readLength = new byte[transferSize];
-
-                        // Send DMG_CART_READ
-                        byte[] commandByte = new byte[1];
-                        int x = GBxCartConstants.DEVICE_CMD.get("DMG_CART_READ");
-                        commandByte[0] = (byte) x;
-                        port.write(commandByte, TIMEOUT);
-
+                    // Read 8 KiB of SRAM
+                    for (int j = 0; j < 128; j++) {
+                        byte[] readLength = new byte[64];
+                        CartRead_RAM(j * 64, 64, port, context);
                         int len = port.read(readLength, TIMEOUT);
 
-                        // Append to output
-                        outputStream.write(Arrays.copyOf(readLength, len));
+                        try {
+                            outputStream.write(Arrays.copyOf(readLength, len));
+                            outputStream.flush();
+                        } catch (IOException e) {
+                        }
 
-                        int totalIterations = 16 * chunksPerBank;
-                        int currentIteration = i * chunksPerBank + j + 1;
+                        int totalIterations = 16 * 128;
+                        int currentIteration = i * 128 + j + 1;
                         int progress = currentIteration * 100 / totalIterations;
 
                         publishProgress(progress);
